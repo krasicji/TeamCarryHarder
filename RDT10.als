@@ -72,3 +72,9 @@ pred sendAll {
 }
 
 run sendAll for 7 but 3 Packet
+
+assert alwaysSends {
+	no s: SystemState | s = last and not (no p: Packet | p in s.buffers[s.sender] or p in s.pipe)
+}
+
+check alwaysSends for 7 but 3 Packet
