@@ -84,7 +84,7 @@ pred sendAll {
 run sendAll for 7 but exactly 2 Packet, exactly 2 Data
 
 assert alwaysSends {
-	(no p: Packet | some last.pipe[p]) and (all d: Data | d in last.buffers[last.receiver])
+	(no p: Packet | some last.pipe[p]) and (all d: Data | d in last.buffers[last.receiver]) and (no d: Data|d in last.buffers[last.sender])
 }
 
 check alwaysSends for 7 but exactly 2 Packet, exactly 2 Data
