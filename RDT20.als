@@ -9,85 +9,94 @@ one sig ACK, NAK, DATA extends Header {}
 
 abstract sig State {}
 one sig Waiting, Receiving, Sending, Acking extends State {}
+
 sig Packet {
-	checksum: lone Checksum,
+	checksum: one Checksum,
 	data: lone Data,
 	header: one Header,
-	destination: Host
-}
-sig Data {}
-sig Checksum {
-	ck: Int
+	destination: one Host
 }
 
-fun generatePacket[d: Data, dest: Host] : Packet {
-	{p: Packet |p.data = d and p.checksum = generateChecksum[d] and p.header = DATA and p.destination = dest}
+sig Data {}
+sig Checksum {}
+
+fun generatePacket[d: Data, dest: Host, head: Header] : Packet {
+	{p: Packet |p.data = d and p.checksum = generateChecksum[d] and p.header = head and p.destination = dest}
 }
 
 fun generateChecksum[d: Data] : Checksum {
-	{c: Checksum | c.ck = 1}
+	{c: Checksum}
 }
 
 sig SystemState {
-	succ: lone SystemState,
 	receiver: Receiver,
 	sender: Sender,
 	status: Host -> State,
 	buffers: Host -> set Data,
-	pipe: Packet -> lone Data,
-	testPacket: Packet
+	pipe: lone Packet,
+	checksums: Data -> Checksum,
+	lastSent : lone Data
 }
 
 pred SystemState.Init[] {
-	all p: Packet | no this.pipe[p]
-	all d: Data | d in this.buffers[this.sender] and d not in this.buffers[this.receiver] and no p: Packet | d in this.pipe[p]
+	all d: Data | d in this.buffers[this.sender] and d not in this.buffers[this.receiver]
 	all h: Host | this.status[h] = Waiting
+	this.pipe = none
+	this.lastSent = none
 }
 
 pred Transition[s, s' : SystemState] {
-	SenderTransition[s, s'] and ReceiverTransition[s, s']
-
-	s.status[s.receiver] = Waiting and s.status[s.sender]  = Waiting => s.pipe in s'.pipe and s'.pipe in s.pipe
-	else s.status[s.receiver] = Receiving and s.status[s.sender] = Waiting => s'.pipe in s.pipe
-	else s.status[s.receiver] = Waiting and s.status[s.sender] = Sending => s.pipe in s'.pipe
-	else s.status[s.receiver] = Receiving and s.status[s.sender] = Sending => #(s.pipe - s'.pipe) = 1 and #(s'.pipe - s.pipe) = 1
-
-	one d: s.buffers[s.sender] | one h: Host | s'.testPacket = generatePacket[d, h]
+	s.status[Sender] = Waiting and s.status[Receiver] = Waiting => bothWaitingTransition[s,s']
+	else s.status[Sender] = Sending and s.status[Receiver] = Waiting => sendPacketIntoPipeTransition[s,s']
+	else s.status[Sender] = Waiting and s.status[Receiver] = Receiving => takePacketFromPipeTransition[s,s']
+	else s.status[Sender] = Sending and s.status[Receiver] = Receiving => swapPacketFromPipeTransition[s,s']
 }
 
-pred SenderTransition[s, s' : SystemState] {
-	s.status[s.sender] = Waiting => s.buffers[s.sender] in s'.buffers[s.sender] and s'.buffers[s.sender] in s.buffers[s.sender]
-	s.status[s.sender] = Sending => one d: Data | d in s.buffers[s.sender] and d not in s'.buffers[s.sender] and (one p: Packet | s'.pipe[p] = d) and #(s.buffers[s.sender] - s'.buffers[s.sender]) = 1
+pred bothWaitingTransition[s,s' : SystemState] {
+	s'.pipe = s.pipe
+	s'.buffers = s.buffers
+	s'.lastSent = s.lastSent
 
-	s.status[s.sender] = Waiting and (some d: Data | d in s.buffers[s.sender]) => s'.status[s.sender] = Sending
-	else s.status[s.sender] = Waiting => s'.status[s.sender] = Waiting
-	else s.status[s.sender] = Sending => s'.status[s.sender] = Waiting
+	(some s.buffers[Sender]) => s'.status[Sender] = Sending
+	else s'.status[Sender] = Waiting
+
+	(s.pipe not = none) and (s.pipe.destination = Receiver) => s'.status[Receiver] = Receiving
+	else s'.status[Receiver] = Waiting
 }
 
-pred ReceiverTransition[s, s': SystemState] {
-	s.status[s.receiver] = Waiting => s.buffers[s.receiver] in s'.buffers[s.receiver] and s'.buffers[s.receiver] in s.buffers[s.receiver]
-	s.status[s.receiver] = Receiving => s.buffers[s.receiver] in s'.buffers[s.receiver] and (one p: Packet | one s.pipe[p] and no s'.pipe[p] and s.pipe[p] in s'.buffers[s.receiver])
+pred sendPacketIntoPipeTransition[s,s' : SystemState] {
+	s'.status[Sender] = Waiting
+	s'.status[Receiver] = Waiting
+	s'.buffers[Receiver] = s.buffers[Receiver]
 
-	s.status[s.receiver] = Waiting and (some p:Packet | some s.pipe[p]) => s'.status[s.receiver] = Receiving
-	else s.status[s.receiver] = Waiting => s'.status[s.receiver] = Waiting
-	else s.status[s.receiver] = Receiving => s'.status[s.receiver] = Waiting
-
+	(one d: s.buffers[Sender] | s'.pipe = generatePacket[d, Receiver, DATA] and s'.pipe not = none and s'.buffers[Sender] = s.buffers[Sender] - d and s'.lastSent = d)
 }
 
-fact Ring {
-	all s: SystemState - first | s in first.^succ and first not in first.^succ
-	last.succ = none
+pred takePacketFromPipeTransition[s,s' : SystemState] {
+	s'.status[Sender] = Waiting
+	s'.status[Receiver] = Waiting
+	s'.buffers[Sender] = s.buffers[Sender]
+	s'.pipe = none
+	s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data
+	s'.lastSent = s.lastSent
+}
+
+pred swapPacketFromPipeTransition[s,s' : SystemState] {
+	s'.status[Sender] = Waiting
+	s'.status[Receiver] = Waiting
+	(one d: s.buffers[Sender] | s'.pipe = generatePacket[d, Receiver, DATA] and s'.pipe not = none and s'.buffers[Sender] = s.buffers[Sender] - d and s'.lastSent = d)
+	s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data
 }
 
 fact States {
 	no s: SystemState | s.status[s.receiver] = Sending or s.status[s.receiver] = Acking or s.status[s.sender] = Receiving
 	all s: SystemState | #(s.status[s.receiver]) = 1 and #(s.status[s.sender]) = 1
-	all s: SystemState | all p: Packet | no d: Data | s.pipe[p] = d and d in s.buffers[Host]
+	no disj p1, p2: Packet | p1.data = p2.data
 }
 
-/*fact Trace {
+fact Trace {
 	first.Init[]
-	all s : SystemState - last | Transition[s, s.succ]
+	all s : SystemState - last | Transition[s, s.next]
 }
 
 assert NoReceive {
@@ -95,19 +104,19 @@ assert NoReceive {
 }
 
 pred show {}
-run show for 5 but exactly 1 Data, exactly 1 Packet
+run show for 5 but exactly 1 Data
 
 pred sendAll {
-	//some s: SystemState | (no p: Packet | p in s.buffers[s.sender] or p in s.pipe)
-	some s: SystemState | (no d: Data | d in s.buffers[s.sender] or (some p: Packet | d in s.pipe[p]))
+	some s: SystemState | (no d: Data | d in s.buffers[s.sender]) and (all d: Data | d in s.buffers[Receiver])
 }
 
 run sendAll for 7 but exactly 2 Packet, exactly 2 Data
 
 assert alwaysSends {
-	(no p: Packet | some last.pipe[p]) and (all d: Data | d in last.buffers[last.receiver])
+	(no p: Packet | p in last.pipe) and (all d: Data | d in last.buffers[last.receiver])
 }
 
-check alwaysSends for 7 but exactly 2 Packet, exactly 2 Data*/
+check alwaysSends for 7 but exactly 2 Packet, exactly 2 Data
 
-run Transition for 1
+run Transition for 1 but exactly 3 SystemState
+run Init for 1
