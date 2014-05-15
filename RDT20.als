@@ -10,8 +10,7 @@ one sig Waiting, Receiving, Sending, Acking extends State {}
 
 sig Packet {
 	checksum: one Checksum,
-	data: one Data,
-	destination: one Host
+	data: one Data
 }
 
 sig Data {}
@@ -19,8 +18,8 @@ one sig Ack, Nak extends Data {}
 
 sig Checksum {}
 
-fun generatePacket[d: Data, dest: Host] : Packet {
-	{p: Packet |p.data = d and p.destination = dest}
+fun generatePacket[d: Data] : Packet {
+	{p: Packet |p.data = d}
 }
 
 /*fun generateChecksum[d: Data] : Checksum {
@@ -76,7 +75,7 @@ pred bothWaitingTransition[s,s' : SystemState] {
 	(some s.buffers[Sender]) => s'.status[Sender] = Sending
 	else s'.status[Sender] = Waiting
 
-	(s.pipe not = none) and (s.pipe.destination = Receiver) => s'.status[Receiver] = Receiving
+	(s.pipe not = none) and (s.pipe.data in Data - Ack - Nak) => s'.status[Receiver] = Receiving
 	else s'.status[Receiver] = Waiting
 }
 
@@ -85,7 +84,7 @@ pred sendPacketIntoPipeTransition[s,s' : SystemState] {
 	s'.status[Receiver] = Waiting
 	s'.buffers[Receiver] = s.buffers[Receiver]
 
-	(one d: s.buffers[Sender] | s'.pipe = generatePacket[d, Receiver] and s'.pipe not = none and s'.buffers[Sender] = s.buffers[Sender] - d and s'.lastSent = d)
+	(one d: s.buffers[Sender] | s'.pipe = generatePacket[d] and s'.pipe not = none and s'.buffers[Sender] = s.buffers[Sender] - d and s'.lastSent = d)
 }
 
 pred takePacketFromPipeTransition[s,s' : SystemState] {
@@ -108,11 +107,11 @@ pred swapPacketFromPipeTransition[s,s' : SystemState] {
 
 pred  switchToReceivingTransition[s,s' : SystemState]{
 	s'.buffers = s.buffers
-	(s.pipe not = none) and (s.pipe.destination = Sender) and (s.pipe.data = Ack) => s'.status[Sender] = Waiting and s'.pipe = none and s'.lastSent = none
-	else (s.pipe not = none) and (s.pipe.destination = Sender) and (s.pipe.data = Nak) => s'.status[Sender] = Acking and s'.pipe = generatePacket[s.lastSent, Receiver] and s'.lastSent = s.lastSent
+	(s.pipe not = none) and (s.pipe.data = Ack) => s'.status[Sender] = Waiting and s'.pipe = none and s'.lastSent = none
+	else (s.pipe not = none) and (s.pipe.data = Nak) => s'.status[Sender] = Acking and s'.pipe = generatePacket[s.lastSent] and s'.lastSent = s.lastSent
 	else s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent
 
-	(s.pipe not = none) and (s.pipe.destination = Receiver) => s'.status[Receiver] = Receiving
+	(s.pipe not = none) and (s.pipe.data in Data - Ack - Nak) => s'.status[Receiver] = Receiving
 	else s'.status[Receiver] = Waiting
 }
 
@@ -121,8 +120,8 @@ pred takePacketFromPipeSendAckTransition[s,s' : SystemState]{
 	s'.status[Receiver] = Waiting
 	s'.lastSent = s.lastSent
 	s'.buffers[Sender] = s.buffers[Sender]
-	s.pipe.checksum = Global.checksums[s.pipe.data] => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and s'.pipe = generatePacket[Ack, Sender]
-	else s'.buffers[Receiver] = s.buffers[Receiver] and s'.pipe = generatePacket[Nak, Sender]
+	s.pipe.checksum = Global.checksums[s.pipe.data] => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and s'.pipe = generatePacket[Ack]
+	else s'.buffers[Receiver] = s.buffers[Receiver] and s'.pipe = generatePacket[Nak]
 	
 	s'.pipe not = none
 }
@@ -131,8 +130,6 @@ fact States {
 	no s: SystemState | s.status[s.receiver] = Sending or s.status[s.receiver] = Acking or s.status[s.sender] = Receiving
 	all s: SystemState | #(s.status[s.receiver]) = 1 and #(s.status[s.sender]) = 1
 	//no disj p1, p2: Packet | p1.data = p2.data and p1.checksum = p2.checksum and p1.data not = none
-	all p: Packet | p.data in Ack + Nak => p.destination = Sender
-	all p: Packet | p.data in Data - Ack - Nak => p.destination = Receiver
 }
 
 pred Trace {
@@ -156,17 +153,17 @@ run show for 20 but exactly 4 Data, exactly 5 Packet
 
 pred sendAll {
 	Trace
-	some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver])
+	some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-run sendAll for 10 but exactly 4 Packet, exactly 4 Data
+run sendAll for 11 but exactly 4 Packet, exactly 4 Data
 
 pred sendAllWithOneError {
-	TraceWithOneError[]
+	TraceWithOneError
 	some s: SystemState | (no d: Data - Ack - Nak | d in s.buffers[s.sender]) and (all d : Data - Ack - Nak | d in s.buffers[Receiver])
 }
 
-run sendAllWithOneError for 20 but exactly 5 Packet, exactly 4 Data
+run sendAllWithOneError for 20 but exactly 4 Packet, exactly 3 Data
 
 assert alwaysSends {
 	(no p: Packet | p in last.pipe) and (all d: Data | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
@@ -175,7 +172,7 @@ assert alwaysSends {
 check alwaysSends for 7 but exactly 3 Packet, exactly 1 Data
 
 pred test {
-	one disj s1, s2 : SystemState | s1.pipe = {p : Packet | p.destination = Receiver and p.data not in Ack + Nak} and s1.status[Receiver] = Receiving and s1.status[Sender] = Acking and takePacketFromPipeSendAckTransition[s1,s2]
+	one disj s1, s2 : SystemState | s1.pipe = {p : Packet | p.data not in Ack + Nak} and s1.status[Receiver] = Receiving and s1.status[Sender] = Acking and takePacketFromPipeSendAckTransition[s1,s2]
 }
 
 run test for 2 but exactly 3 Data, exactly 3 Packet
