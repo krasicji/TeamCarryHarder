@@ -144,12 +144,15 @@ pred sendAll {
 	Trace and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-run sendAll for 6 but exactly 4 Packet, exactly 3 Data
-//With Error
+//With no Erros
+run sendAll for 6 but exactly 3 Data, exactly 4 Packet
+//With 1 Error
 run sendAll for 9 but exactly 3 Data, exactly 4 Packet
+//With 2 Errors
+run sendAll for 12 but exactly 3 Data, exactly 4 Packet
 
 assert sendWithCorruptAckOrNak {
-	TraceWithCorruptedAckOrNak and (no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
+	TraceWithCorruptedAckOrNak=> (no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
 }
 
 check sendWithCorruptAckOrNak for 12 but exactly 3 Data, exactly 4 Packet
