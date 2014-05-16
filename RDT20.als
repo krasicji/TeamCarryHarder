@@ -51,6 +51,13 @@ pred SystemState.Init[] {
 	all p: Packet | p.checksum = Global.checksums[p.data] or one p2: Packet | p.data = p2.data and p.checksum not = p2.checksum and p2.checksum = Global.checksums[p.data] and p.data not in Ack + Nak
 }
 
+pred SystemState.InitCorruptAckOrNak[] {
+	all d: Data - Ack - Nak| d in this.buffers[this.sender] and d not in this.buffers[this.receiver]
+	all h: Host | this.status[h] = Waiting
+	no this.pipe
+	no this.lastSent
+}
+
 pred Transition[s, s' : SystemState] {
 	s.status[Sender] = Waiting and s.status[Receiver] = Waiting => bothWaitingTransition[s,s']
 	else s.status[Sender] = Sending and s.status[Receiver] = Waiting => sendPacketIntoPipeTransition[s,s']
@@ -99,8 +106,8 @@ pred swapPacketFromPipeTransition[s,s' : SystemState] {
 
 pred  switchToReceivingTransition[s,s' : SystemState]{
 	s'.buffers = s.buffers
-	(s.pipe not = none) and (s.pipe.data = Ack) => s'.status[Sender] = Waiting and s'.pipe = none and s'.lastSent = none
-	else (s.pipe not = none) and (s.pipe.data = Nak) => s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent] or s'.pipe = generateCorrectDataPacket[s.lastSent]) and s'.lastSent = s.lastSent
+	(s.pipe not = none) and (s.pipe.data = Ack) and (s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.status[Sender] = Waiting and s'.pipe = none and s'.lastSent = none
+	else (s.pipe not = none) and (s.pipe.data = Nak) and (s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent] or s'.pipe = generateCorrectDataPacket[s.lastSent]) and s'.lastSent = s.lastSent
 	else s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent
 
 	(s.pipe not = none) and (s.pipe.data in Data - Ack - Nak) => s'.status[Receiver] = Receiving
@@ -112,8 +119,8 @@ pred takePacketFromPipeSendAckTransition[s,s' : SystemState]{
 	s'.status[Receiver] = Waiting
 	s'.lastSent = s.lastSent
 	s'.buffers[Sender] = s.buffers[Sender]
-	s.pipe.checksum = Global.checksums[s.pipe.data] => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and s'.pipe = generateResponsePacket[Ack]
-	else s'.buffers[Receiver] = s.buffers[Receiver] and s'.pipe = generateResponsePacket[Nak]
+	s.pipe.checksum = Global.checksums[s.pipe.data] => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and (s'.pipe = generateCorrectDataPacket[Ack] or s'.pipe = generateIncorrectDataPacket[Ack])
+	else s'.buffers[Receiver] = s.buffers[Receiver] and (s'.pipe = generateCorrectDataPacket[Nak] or s'.pipe = generateIncorrectDataPacket[Nak])
 	
 	s'.pipe not = none
 }
@@ -123,21 +130,32 @@ fact States {
 	all s: SystemState | #(s.status[s.receiver]) = 1 and #(s.status[s.sender]) = 1
 }
 
-fact Trace {
+pred Trace {
 	first.Init[]
 	all s : SystemState - last | Transition[s, s.next]
 }
 
+pred TraceWithCorruptedAckOrNak {
+	first.InitCorruptAckOrNak[]
+	all s : SystemState - last | Transition[s, s.next]
+}
+
 pred sendAll {
-	some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
+	Trace and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
 run sendAll for 6 but exactly 4 Packet, exactly 3 Data
 //With Error
 run sendAll for 9 but exactly 3 Data, exactly 4 Packet
 
+assert sendWithCorruptAckOrNak {
+	TraceWithCorruptedAckOrNak and (no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
+}
+
+check sendWithCorruptAckOrNak for 12 but exactly 3 Data, exactly 4 Packet
+
 assert alwaysSends {
-	(no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
+	Trace => (no d: Data - Ack - Nak| d in last.buffers[Sender]) and (all d: Data - Ack - Nak | d in last.buffers[Receiver] and last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
 }
 
 check alwaysSends for 12 but exactly 3 Data, exactly 4 Packet
