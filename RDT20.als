@@ -123,23 +123,21 @@ fact States {
 	all s: SystemState | #(s.status[s.receiver]) = 1 and #(s.status[s.sender]) = 1
 }
 
-pred Trace {
+fact Trace {
 	first.Init[]
 	all s : SystemState - last | Transition[s, s.next]
 }
 
 pred sendAll {
-	Trace
 	some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-run sendAll for 6 but exactly 4 Packet, exactly 4 Data
+run sendAll for 6 but exactly 4 Packet, exactly 3 Data
 //With Error
 run sendAll for 9 but exactly 3 Data, exactly 4 Packet
 
 assert alwaysSends {
-	Trace
-	(no p: Packet | p in last.pipe) and (all d: Data | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
+	(no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
 }
 
 check alwaysSends for 12 but exactly 3 Data, exactly 4 Packet
