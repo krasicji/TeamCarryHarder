@@ -16,6 +16,10 @@ sig Packet {
 sig Data {}
 one sig Ack, Nak extends Data {}
 
+sig Bit {
+	bit: one Int
+}
+
 sig Checksum {}
 
 fun generateCorrectDataPacket[d: Data] : Packet {
@@ -36,7 +40,9 @@ sig SystemState {
 	status: Host -> State,
 	buffers: Host -> set Data,
 	pipe: lone Packet,
-	lastSent : lone Data
+	lastSent : lone Data,
+	lastRecieved : lone Data,
+	currentSequenceNumber: one Bit
 }
 
 one sig Global {
@@ -48,6 +54,8 @@ pred SystemState.Init[] {
 	all h: Host | this.status[h] = Waiting
 	no this.pipe
 	no this.lastSent
+	no this.lastRecieved
+	this.currentSequenceNumber.bit = 0
 	all p: Packet | p.checksum = Global.checksums[p.data] or one p2: Packet | p.data = p2.data and p.checksum not = p2.checksum and p2.checksum = Global.checksums[p.data] and p.data not in Ack + Nak
 }
 
@@ -56,13 +64,15 @@ pred SystemState.InitCorruptAckOrNak[] {
 	all h: Host | this.status[h] = Waiting
 	no this.pipe
 	no this.lastSent
+	no this.lastRecieved
+	this.currentSequenceNumber.bit = 0
+	
+	//all p: Packet | p.checksum = Global.checksums[p.data] or one p2: Packet | p.data = p2.data and p.checksum not = p2.checksum and p2.checksum = Global.checksums[p.data] and p.data not in Ack + Nak
 }
 
 pred Transition[s, s' : SystemState] {
 	s.status[Sender] = Waiting and s.status[Receiver] = Waiting => bothWaitingTransition[s,s']
 	else s.status[Sender] = Sending and s.status[Receiver] = Waiting => sendPacketIntoPipeTransition[s,s']
-	else s.status[Sender] = Waiting and s.status[Receiver] = Receiving => takePacketFromPipeTransition[s,s'] //shouldn't happen
-	else s.status[Sender] = Sending and s.status[Receiver] = Receiving => swapPacketFromPipeTransition[s,s']//shouldn't happen
 	else s.status[Sender] = Acking and s.status[Receiver] = Waiting => switchToReceivingTransition[s,s']
 	else s.status[Sender] = Acking and s.status[Receiver] = Receiving => takePacketFromPipeSendAckTransition[s,s']
 }
@@ -77,6 +87,8 @@ pred bothWaitingTransition[s,s' : SystemState] {
 	s'.pipe = s.pipe
 	s'.buffers = s.buffers
 	s'.lastSent = s.lastSent
+	s'.lastRecieved = s.lastRecieved
+	s'.currentSequenceNumber = s.currentSequenceNumber
 
 	(some s.buffers[Sender]) => s'.status[Sender] = Sending
 	else s'.status[Sender] = Waiting
@@ -92,23 +104,18 @@ pred sendPacketIntoPipeTransition[s,s' : SystemState] {
 	s'.status[Sender] = Acking
 	s'.status[Receiver] = Waiting
 	s'.buffers[Receiver] = s.buffers[Receiver]
+	s'.lastRecieved = s.lastRecieved
+	s'.currentSequenceNumber = s.currentSequenceNumber
 
 	(one d: s.buffers[Sender] | (s'.pipe = generateIncorrectDataPacket[d] or s'.pipe = generateCorrectDataPacket[d]) and s'.pipe not = none and s'.buffers[Sender] = s.buffers[Sender] - d and s'.lastSent = d)
 }
 
-pred takePacketFromPipeTransition[s,s' : SystemState] {
-	1=0
-}
-
-pred swapPacketFromPipeTransition[s,s' : SystemState] {
-	1=0
-}
-
 pred  switchToReceivingTransition[s,s' : SystemState]{
 	s'.buffers = s.buffers
-	(s.pipe not = none) and (s.pipe.data = Ack) and (s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.status[Sender] = Waiting and s'.pipe = none and s'.lastSent = none
-	else (s.pipe not = none) and (s.pipe.data = Nak) and (s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent] or s'.pipe = generateCorrectDataPacket[s.lastSent]) and s'.lastSent = s.lastSent
-	else s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent
+	s'.lastRecieved = s.lastRecieved
+	((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum = Global.checksums[s.pipe.data]) => (s'.status[Sender] = Waiting and (no s'.pipe) and (no s'.lastSent) and (s.currentSequenceNumber.bit = 1 => s'.currentSequenceNumber.bit = 0) and (s.currentSequenceNumber.bit = 0 => s'.currentSequenceNumber.bit = 1))
+	else ((s.pipe not = none) and s.pipe.data = Nak and s.pipe.checksum = Global.checksums[s.pipe.data]) => (s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent] or s'.pipe = generateCorrectDataPacket[s.lastSent]) and s'.lastSent = s.lastSent and  s'.currentSequenceNumber = s.currentSequenceNumber)
+	else (s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
 
 	(s.pipe not = none) and (s.pipe.data in Data - Ack - Nak) => s'.status[Receiver] = Receiving
 	else s'.status[Receiver] = Waiting
@@ -118,9 +125,12 @@ pred takePacketFromPipeSendAckTransition[s,s' : SystemState]{
 	s'.status[Sender] = Acking
 	s'.status[Receiver] = Waiting
 	s'.lastSent = s.lastSent
+	s'.currentSequenceNumber = s.currentSequenceNumber
+
 	s'.buffers[Sender] = s.buffers[Sender]
-	s.pipe.checksum = Global.checksums[s.pipe.data] => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and (s'.pipe = generateCorrectDataPacket[Ack] or s'.pipe = generateIncorrectDataPacket[Ack])
-	else s'.buffers[Receiver] = s.buffers[Receiver] and (s'.pipe = generateCorrectDataPacket[Nak] or s'.pipe = generateIncorrectDataPacket[Nak])
+	(s.pipe.data not = s.lastRecieved and s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.buffers[Receiver] = s.buffers[Receiver] + s.pipe.data and s'.lastRecieved = s.pipe.data and (s'.pipe = generateCorrectDataPacket[Ack] or s'.pipe = generateIncorrectDataPacket[Ack])
+	else (s.pipe.data = s.lastRecieved and s.pipe.checksum = Global.checksums[s.pipe.data]) => s'.buffers[Receiver] = s.buffers[Receiver] and s'.lastRecieved = s.lastRecieved and (s'.pipe = generateCorrectDataPacket[Ack] or s'.pipe = generateIncorrectDataPacket[Ack])
+	else s'.buffers[Receiver] = s.buffers[Receiver] and (s'.pipe = generateCorrectDataPacket[Nak] or s'.pipe = generateIncorrectDataPacket[Nak]) and s'.lastRecieved = s.lastRecieved
 	
 	s'.pipe not = none
 }
@@ -144,21 +154,21 @@ pred sendAll {
 	Trace and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-//With no Erros
-run sendAll for 6 but exactly 3 Data, exactly 4 Packet
+//With no Errors
+run sendAll for 6 but exactly 3 Data, exactly 4 Packet, exactly 2 Bit
 //With 1 Error
-run sendAll for 9 but exactly 3 Data, exactly 4 Packet
+run sendAll for 9 but exactly 3 Data, exactly 4 Packet, exactly 2 Bit
 //With 2 Errors
-run sendAll for 12 but exactly 3 Data, exactly 4 Packet
+run sendAll for 12 but exactly 3 Data, exactly 4 Packet, exactly 2 Bit
 
-assert sendWithCorruptAckOrNak {
-	TraceWithCorruptedAckOrNak=> (no p: Packet | p in last.pipe) and (all d: Data - Ack - Nak | d in last.buffers[last.receiver]) and (last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
+pred sendWithCorruptAckOrNak {
+	TraceWithCorruptedAckOrNak and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-check sendWithCorruptAckOrNak for 12 but exactly 3 Data, exactly 4 Packet
+run sendWithCorruptAckOrNak for 9 but exactly 3 Data, exactly 4 Packet, exactly 2 Bit
 
 assert alwaysSends {
 	Trace => (no d: Data - Ack - Nak| d in last.buffers[Sender]) and (all d: Data - Ack - Nak | d in last.buffers[Receiver] and last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
 }
 
-check alwaysSends for 12 but exactly 3 Data, exactly 4 Packet
+check alwaysSends for 12 but exactly 3 Data, exactly 4 Packet, exactly 2 Bit
