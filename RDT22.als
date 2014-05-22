@@ -196,7 +196,7 @@ pred sendAllCorruptAck {
 //With no Errors
 run sendAllCorruptAck for 6 but exactly 2 Data, exactly 6 Packet
 //With 1 Error
-run sendAllCorruptAck for 9 but exactly 2 Data, exactly 6 Packet
+run sendAllCorruptAck for 9 but exactly 2 Data, exactly 6 Packet, 2 int
 
 pred sendAllCorruptAckOnly {
 	TraceWithCorruptedAckOnly and some s: SystemState | (no d: Data - Ack | d in s.buffers[s.sender]) and (all d: Data - Ack | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
@@ -205,7 +205,7 @@ pred sendAllCorruptAckOnly {
 //With No Errors
 run sendAllCorruptAckOnly for 6 but exactly 2 Data, exactly 5 Packet
 //With One Error
-run sendAllCorruptAckOnly for 9 but exactly 2 Data, exactly 5 Packet
+run sendAllCorruptAckOnly for 9 but exactly 2 Data, exactly 5 Packet, 2 int
 //With Two Errors
 run sendAllCorruptAckOnly for 12 but exactly 2 Data, exactly 5 Packet
 
