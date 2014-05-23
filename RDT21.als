@@ -139,7 +139,7 @@ pred  switchToReceivingTransition[s,s' : SystemState]{
 	s'.lastRecieved = s.lastRecieved
 	((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum = Global.checksums[s.pipe.data]) => (s'.status[Sender] = Waiting and (no s'.pipe) and (no s'.lastSent) and (s.currentSequenceNumber = 1 => s'.currentSequenceNumber= 0) and (s.currentSequenceNumber= 0 => s'.currentSequenceNumber = 1))
 	else ((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum not = Global.checksums[s.pipe.data])  =>  (s'.status[Sender]=Acking and (s'.pipe = generateCorrectDataPacket[s.lastSent, s.currentSequenceNumber] or s'.pipe = generateIncorrectDataPacket[s.lastSent, s.currentSequenceNumber]) and s'.pipe not = none and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
-	else ((s.pipe not = none) and s.pipe.data = Nak )=> (s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent, s'.currentSequenceNumber] or s'.pipe = generateCorrectDataPacket[s.lastSent, s'.currentSequenceNumber]) and s'.lastSent = s.lastSent and  s'.currentSequenceNumber = s.currentSequenceNumber)
+	else ((s.pipe not = none) and s.pipe.data = Nak )=> (s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent, s'.currentSequenceNumber] or s'.pipe = generateCorrectDataPacket[s.lastSent, s'.currentSequenceNumber]) and s'.pipe not = none and s'.lastSent = s.lastSent and  s'.currentSequenceNumber = s.currentSequenceNumber)
 	else (s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
 
 	(s.pipe not = none) and (s.pipe.data in Data - Ack - Nak) => s'.status[Receiver] = Receiving
