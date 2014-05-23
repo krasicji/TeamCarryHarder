@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<alloy>
+
+<view>
+
+<projection> <type name="Global"/> <type name="SystemState"/> </projection>
+
+<defaultnode/>
+
+<defaultedge/>
+
+<node>
+   <type name="Acking"/>
+   <type name="Global"/>
+   <type name="Host"/>
+   <type name="Receiver"/>
+   <type name="Receiving"/>
+   <type name="Sender"/>
+   <type name="Sending"/>
+   <type name="String"/>
+   <type name="SystemState"/>
+   <type name="univ"/>
+   <type name="Waiting"/>
+   <type name="ordering/Ord"/>
+   <type name="seq/Int"/>
+   <set name="First" type="ordering/Ord"/>
+   <set name="Next" type="ordering/Ord"/>
+   <set name="pipe" type="Packet"/>
+   <set name="receiver" type="Receiver"/>
+   <set name="sender" type="Sender"/>
+</node>
+
+<node color="Green">
+   <type name="Data"/>
+</node>
+
+<node shape="Box">
+   <set name="lastRecieved" type="Data"/>
+   <set name="lastSent" type="Data"/>
+</node>
+
+<node shape="Circle" color="Blue">
+   <type name="State"/>
+</node>
+
+<node shape="Diamond" color="Red">
+   <type name="Packet"/>
+</node>
+
+<node shape="Egg" color="Gray">
+   <type name="Checksum"/>
+</node>
+
+<node shape="Inv Trapezoid" color="White">
+   <type name="Int"/>
+   <set name="currentSequenceNumber" type="Int"/>
+</node>
+
+<node shape="Tpl Octagon">
+   <type name="Ack"/>
+   <type name="Nak"/>
+</node>
+
+</view>
+
+</alloy>

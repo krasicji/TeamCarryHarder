@@ -61,7 +61,7 @@ pred SystemState.InitCorruptAckNak[] {
 	all h: Host | this.status[h] = Waiting
 	no this.pipe
 	no this.lastSent
-	all p: Packet | p.data not = (Ack+Nak) => (p.checksum = Global.checksums[p.data] or one p2: Packet | p.data = p2.data and p.checksum not = p2.checksum and p2.checksum = Global.checksums[p.data] and p.data not in (Ack + Nak) and (p.sequence = 0 or p.sequence = 1))
+	all p: Packet | p.data not in (Ack+Nak) => (p.checksum = Global.checksums[p.data] or one p2: Packet | p.data = p2.data and p.checksum not = p2.checksum and p2.checksum = Global.checksums[p.data] and p.data not in (Ack + Nak) and (p.sequence = 0 or p.sequence = 1))
 	this.currentSequenceNumber = 0
 	#{Ack.~data} = 4
 	one p: Packet | p.data = Ack and p.sequence = 0 and p.checksum = Global.checksums[p.data]
@@ -80,7 +80,7 @@ pred SystemState.InitCorruptAckNakOnly[] {
 	all h: Host | this.status[h] = Waiting
 	no this.pipe
 	no this.lastSent
-	//all p: Packet | p.data not = (Ack+Nak) => p.checksum = Global.checksums[p.data]
+	all p: Packet | p.data not in (Ack+Nak) => p.checksum = Global.checksums[p.data]
 	this.currentSequenceNumber = 0
 	#{Ack.~data} = 4
 	one p: Packet | p.data = Ack and p.sequence = 0 and p.checksum = Global.checksums[p.data]
@@ -138,7 +138,7 @@ pred  switchToReceivingTransition[s,s' : SystemState]{
 	s'.buffers = s.buffers
 	s'.lastRecieved = s.lastRecieved
 	((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum = Global.checksums[s.pipe.data]) => (s'.status[Sender] = Waiting and (no s'.pipe) and (no s'.lastSent) and (s.currentSequenceNumber = 1 => s'.currentSequenceNumber= 0) and (s.currentSequenceNumber= 0 => s'.currentSequenceNumber = 1))
-	else ((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum not = Global.checksums[s.pipe.data])  =>  (s'.status[Sender]=Acking and (s'.pipe = generateCorrectDataPacket[s.lastSent, s.currentSequenceNumber] or s'.pipe = generateIncorrectDataPacket[s.lastSent, s.currentSequenceNumber]) and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
+	else ((s.pipe not = none) and s.pipe.data = Ack and s.pipe.checksum not = Global.checksums[s.pipe.data])  =>  (s'.status[Sender]=Acking and (s'.pipe = generateCorrectDataPacket[s.lastSent, s.currentSequenceNumber] or s'.pipe = generateIncorrectDataPacket[s.lastSent, s.currentSequenceNumber]) and s'.pipe not = none and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
 	else ((s.pipe not = none) and s.pipe.data = Nak )=> (s'.status[Sender] = Acking and (s'.pipe = generateIncorrectDataPacket[s.lastSent, s'.currentSequenceNumber] or s'.pipe = generateCorrectDataPacket[s.lastSent, s'.currentSequenceNumber]) and s'.lastSent = s.lastSent and  s'.currentSequenceNumber = s.currentSequenceNumber)
 	else (s'.status[Sender]=Acking and s'.pipe = s.pipe and s'.lastSent = s.lastSent and s'.currentSequenceNumber = s.currentSequenceNumber)
 
@@ -171,7 +171,7 @@ pred Trace {
 }
 
 pred TraceWithCorruptedAckOrNak {
-	first.InitCorruptAckNakOnly[]
+	first.InitCorruptAckNak[]
 	all s : SystemState - last | Transition[s, s.next]
 }
 
@@ -187,10 +187,10 @@ run sendAll for 9 but exactly 3 Data, exactly 4 Packet
 run sendAll for 12 but exactly 3 Data, exactly 4 Packet
 
 pred sendWithCorruptAckOrNak {
-	TraceWithCorruptedAckOrNak //and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
+	TraceWithCorruptedAckOrNak and some s: SystemState | (no d: Data - Ack - Nak| d in s.buffers[s.sender]) and (all d: Data - Ack - Nak | d in s.buffers[Receiver] and s.status[Sender] = Waiting and s.status[Receiver] = Waiting)
 }
 
-run sendWithCorruptAckOrNak for 9 but exactly 3 Data, exactly 9 Packet
+run sendWithCorruptAckOrNak for 9 but exactly 3 Data, exactly 10 Packet
 
 assert alwaysSends {
 	Trace => (no d: Data - Ack - Nak| d in last.buffers[Sender]) and (all d: Data - Ack - Nak | d in last.buffers[Receiver] and last.status[Sender] = Waiting and last.status[Receiver] = Waiting)
